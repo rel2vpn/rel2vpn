@@ -545,7 +545,7 @@ sudo install -m 755 wgclient /usr/local/bin/wgclient
 sudo wgclient install                # register the tunnel service (systemd / launchd / Windows SCM)
 wgclient login you@example.com       # sign in; the password is prompted
 wgclient routes                      # what your plan allows
-wgclient up "US → Lithuania"         # create this machine's device and connect
+wgclient up 3                        # create this machine's device and connect (the number, or the name)
 wgclient status                      # transport, handshake, traffic
 ```
 
@@ -557,16 +557,18 @@ over a local channel and never need `sudo`.
 
 Run `wgclient <command> --help` for the exact options on your version.
 
-#### `wgclient login <email> [--url <url>]`
-Sign in to your rel2 VPN account. The password is read from the terminal (or from
-one line of standard input, for provisioning). If two-factor authentication is on
+#### `wgclient login [<email>] [--url <url>]`
+Sign in to your rel2 VPN account. Without an email on the command line it asks
+for one; the password is read from the terminal (or from one line of standard
+input, for provisioning — then the email must be on the command line). If two-factor authentication is on
 for the account, the 6-digit code from your authenticator app — or one of your
 recovery codes — is asked for next. The session is saved on this machine, so
 later commands do not ask again. `--url` points at a self-hosted control plane
 (default `https://rel2.com`).
 
 ```bash
-wgclient login you@example.com
+wgclient login                                        # asks for the email, then the password
+wgclient login you@example.com                        # asks for the password only
 echo 'my-password' | wgclient login you@example.com   # non-interactive
 ```
 
@@ -574,21 +576,24 @@ echo 'my-password' | wgclient login you@example.com   # non-interactive
 Sign out and forget the stored session on this machine.
 
 #### `wgclient routes`
-List the routes your plan can use — name, kind (direct / double / chain / multi-hop)
-and exit location.
+List the routes your plan can use — a number, the name, kind (direct / double /
+chain / multi-hop), plan, state and path. The numbers are stable (the list is
+always in name order), so `wgclient up 3` means the third line, like ufw.
 
 #### `wgclient devices`
 List the devices on your account and their status, and show which one is *this*
 machine.
 
-#### `wgclient up <route> [--device <name>] [--transport auto|udp|tcp]`
-Connect this machine to a route. It finds or creates this machine's device (named
+#### `wgclient up <# or route> [--device <name>] [--transport auto|udp|tcp]`
+Connect this machine to a route — by its number in `wgclient routes` or by its
+name. It finds or creates this machine's device (named
 after the hostname, or `--device`), pulls its configuration from your account, and
 hands it to the tunnel service — no `sudo` once the service is installed.
 `--transport` forces a carrier instead of the automatic ladder: `udp` (WireGuard /
 AmneziaWG) or `tcp` (the TLS stream fallback).
 
 ```bash
+wgclient up 3
 wgclient up "US → Lithuania"
 wgclient up "Direct — Las Vegas" --device my-laptop --transport tcp
 ```
@@ -757,6 +762,14 @@ network card** so the encrypted packets can still leave the machine. On Windows 
 additionally binds the tunnel's socket to the physical adapter. When you
 disconnect — or if no transport can connect — those routes are removed so your
 normal internet is restored.
+
+On Linux the machine also **stays reachable on its own address** while
+connected: replies to connections that arrive at the real network card (an SSH
+session to a server, anything else it serves) leave by that card, through a
+small policy-routing table the client adds and removes with the tunnel — so a
+VDS you connect to a route keeps its SSH session, while everything the machine
+itself starts goes through the route. The connection log says so on connect
+(`this machine stays reachable on <address> outside the tunnel`).
 
 ### Where your data is stored
 
