@@ -90,8 +90,8 @@ Wi‑Fi, mobile networks, and countries that block plain VPNs.
 can install the tunnel service. That is the whole setup.
 
 **An Anchor on a headless box (VDS, Raspberry Pi):** unpack `wgclient` for the
-machine and run `sudo ./wgclient anchor-setup --name "Pi at home"` — see
-[Anchor mode](#anchor-mode--your-own-exit).
+machine, run `sudo ./wgclient install --anchor "Pi at home"`, then
+`sudo wgclient up` — see [Anchor mode](#anchor-mode--your-own-exit).
 
 **Command line:**
 
@@ -136,12 +136,10 @@ window.
 
 ### Install — macOS
 
-1. Unzip and drag **rel2 VPN.app** to *Applications*, then open it.
-2. The build is not yet notarized with Apple, so the first launch is blocked with
-   *"cannot be opened"*. Open **System Settings → Privacy & Security**, scroll
-   down, and click **Open Anyway** once. (Or in Terminal:
-   `xattr -d com.apple.quarantine "/Applications/rel2 VPN.app"`.)
-3. Sign in, press **Connect**. macOS asks for your password once so the app can
+1. Unzip and drag **rel2 VPN.app** to *Applications*, then open it. The app is
+   signed with an Apple Developer ID and notarized by Apple, so macOS opens it
+   without warnings.
+2. Sign in, press **Connect**. macOS asks for your password once so the app can
    install the tunnel service.
 
 ### Install — Windows
@@ -433,23 +431,30 @@ relay works everywhere but is much slower; see Troubleshooting.
 ### Set one up with the CLI, no app
 
 For a VDS you rent, a Raspberry Pi or any headless Linux (systemd) or macOS box,
-one command does everything:
+two commands do everything:
 
 ```sh
 # pick the build: linux_amd64 (VDS), linux_arm64 (Pi 4/5 with a 64-bit OS), linux_armv7 (older Pi, 32-bit OS), darwin_arm64 / darwin_amd64 (Mac)
 curl -fsSL https://github.com/rel2vpn/rel2vpn/releases/latest/download/wgclient_linux_arm64.tar.gz | tar -xz
-sudo ./wgclient anchor-setup --name "Pi in Vilnius"     # installs the service, signs in (email, password, 2FA code), enrols, waits for the first sync
-wgclient anchor                                          # the state: links, public IP, counters — any time
+sudo ./wgclient install --anchor "Pi in Vilnius"   # installs the service; this machine is the Anchor "Pi in Vilnius"
+sudo wgclient up                                   # signs in the first time, registers the Anchor, comes online
+wgclient status                                    # the state: links, public IP, counters — any time
 ```
 
-`anchor-setup` is safe to re-run; it skips what is done. For provisioning
-without a terminal, pass `--email you@example.com` and pipe the password on
-standard input. The service starts with the machine and needs no app
+`up` is safe to re-run: it signs in and registers the Anchor only the first
+time, asking for your email and password (and the two-factor code, if it is on).
+For provisioning without a terminal, sign in first with the password on standard
+input —
+`echo 'my-password' | sudo wgclient login you@example.com` — then run
+`sudo wgclient up`. The service starts with the machine and needs no app
 afterwards. To update a headless box later, download the new build and run
 `sudo ./wgclient install` again — settings and the Anchor's identity are kept.
-`wgclient anchor-off` / `anchor-on` is the switch. OpenWrt routers (mipsle) have
-no service manager the installer supports: run `wgclient run` in the foreground
-under your own init there.
+`wgclient down` takes the Anchor offline and `wgclient up` brings it back;
+`wgclient mode` says what the machine is, and `wgclient init --client` (or
+`--anchor "Name"`) changes it without installing again. OpenWrt routers (mipsle)
+have no service manager the installer supports: run `wgclient run` in the
+foreground under your own init there, then `wgclient init --anchor "Name"` and
+`wgclient up`.
 
 ### Use it: routes and sharing
 
@@ -497,7 +502,7 @@ resolver for the route. The Anchor screen's connection details and
   At enrolment it receives its **own** account session (renewed by every sync;
   signing out of the app does not touch it). If that session is ever revoked (you
   changed your password) or expired (the machine was off for a month), opening the
-  app's Anchor screen — or running `wgclient anchor-on` — hands it a fresh sign-in
+  app's Anchor screen — or running `wgclient up` — hands it a fresh sign-in
   and it renews itself. The enrolment lives in `conf/anchor.json` in the service's
   store.
 - **No ports to open.** The Anchor dials *out* to the rel2 node with a certificate
@@ -511,10 +516,14 @@ resolver for the route. The Anchor screen's connection details and
   internet is handled by a user-space network stack inside the service: nothing
   is added to your machine's routing table or firewall, and nothing on the
   machine is reachable through the link.
-- **The guard.** Private addresses (your home network), loopback, link-local,
-  multicast and outgoing mail (port 25) are refused; LAN access only opens
-  private addresses, only for your own devices. Refusals are counted on the
-  Anchor screen.
+- **The guard.** Your home network is refused: private addresses, the carriers'
+  shared space (100.64.0.0/10) and the other internal ranges, and the machine's
+  own addresses — its public one (which your router answers from inside, with its
+  admin page and port forwards) and those of its interfaces. So are loopback,
+  link-local, multicast and outgoing mail (port 25). **LAN access** opens the home
+  network to the devices on your routes through the Anchor — yours and the people
+  you shared it with — never to strangers on a Community Anchor. Refusals are
+  counted on the Anchor screen.
 - **Other VPNs.** Anchor mode refuses to start, and pauses, while another VPN
   interface is active on the machine — it would swallow or leak the traffic.
 - **What is logged.** The rel2 servers keep the Anchor's public IP and its history
@@ -588,11 +597,14 @@ always in name order), so `wgclient up 3` means the third line, like ufw.
 List the devices on your account and their status, and show which one is *this*
 machine.
 
-#### `wgclient up <# or route> [--device <name>] [--transport auto|udp|tcp]`
-Connect this machine to a route — by its number in `wgclient routes` or by its
-name. It finds or creates this machine's device (named
-after the hostname, or `--device`), pulls its configuration from your account, and
-hands it to the tunnel service — no `sudo` once the service is installed.
+#### `wgclient up [<# or route>] [--device <name>] [--transport auto|udp|tcp]`
+Bring this machine up, as its [mode](#wgclient-mode) says. An **Anchor** comes
+online (the first time it signs in if needed and registers the Anchor; it takes no
+route). A **client** connects to a route — by its number in `wgclient routes` or
+by its name; without one, the last route again. It finds or creates this
+machine's device (named after the hostname, or `--device`), pulls its
+configuration from your account, and hands it to the tunnel service — no `sudo`
+once the service is installed.
 `--transport` forces a carrier instead of the automatic ladder: `udp` (WireGuard /
 AmneziaWG) or `tcp` (the TLS stream fallback).
 
@@ -603,53 +615,49 @@ wgclient up "Direct — Las Vegas" --device my-laptop --transport tcp
 ```
 
 #### `wgclient down`
-Disconnect the tunnel and remember the choice (it stays down across reboots until
-you connect again).
+A client disconnects the tunnel and remembers the choice (it stays down across
+reboots until you connect again); an Anchor goes offline and stays an Anchor
+(`wgclient up` brings it back).
 
 #### `wgclient status`
-Show the running tunnel: version, interface name, active transport, route,
-endpoint, your tunnel address, the time since the last handshake, and traffic
-counters. When disconnected it prints the last route so you can reconnect quickly.
+The mode first, then its state. A client: version, interface name, active
+transport, route, endpoint, your tunnel address, the time since the last handshake,
+and traffic counters; when disconnected it prints the last route so you can
+reconnect quickly. An Anchor: name and id, whether it is online, the public IP the
+rel2 node sees, the account's switch, the last sync, the certificate's expiry, each
+link (node, up/down, traffic, the routes it carries) and the counters — live
+connections and flows refused by the LAN/port guard.
 
-#### `wgclient install [--no-start] [--idle] [--token-from <file>]`
+#### `wgclient install [--anchor <name>] [--no-start] [--idle] [--token-from <file>]`
 Install the tunnel as a **system service** (needs administrator / root). The
 service is what holds the virtual interface and routing; installing it lets every
-other command run unprivileged. `--no-start` installs without starting; `--idle`
-starts the service disconnected. `--token-from` is used by the desktop app to share
-its control token with the service.
+other command run unprivileged. `--anchor` makes this machine an Anchor with that
+name (`wgclient up` then brings it online); without it the machine is a client.
+`--no-start` installs without starting; `--idle` starts the service disconnected.
+`--token-from` is used by the desktop app to share its control token with the
+service.
 
 #### `wgclient uninstall [--purge]`
 Remove the system service (needs administrator / root). `--purge` also deletes the
 stored tunnel configuration and state.
 
-#### `wgclient anchor`
-Anchor mode state: name and id, whether the mode is on and running, the public IP
-the rel2 node sees, the account's switch, the last sync, the certificate's expiry,
-each link (node, up/down, traffic, the routes it carries) and the counters —
-live connections and flows refused by the LAN/port guard. See
+#### `wgclient mode`
+What this machine is: `client` (it connects to routes) or `anchor` (an exit for
+them) on the first line — scripts read it — then the state (and an Anchor's name).
+`up`, `down` and `status` follow the mode. See
 [Anchor mode](#anchor-mode--your-own-exit).
 
-#### `wgclient anchor-setup [--name <name>] [--email <email>] [--url <url>] [--no-install]`
-Make this Linux or macOS machine an Anchor in one command (needs root): installs
-the service if it is missing, signs in if the machine holds no session (email,
-password, two-factor code; `--email` plus the password on standard input for
-provisioning), enrols the machine with your account, turns Anchor mode on and
-waits for the first sync. Re-running skips what is done.
+#### `wgclient init --anchor <name>` / `wgclient init --client`
+Change the mode without installing again. `--anchor` makes this machine an Anchor
+with that name (an Anchor already registered under another name is renamed on your
+account); `wgclient up` then brings it online. `--client` makes it a client again:
+the Anchor stops, and stays on your account until you remove it on the website.
 
 ```bash
-sudo wgclient anchor-setup --name "Pi in Vilnius"
-echo 'my-password' | sudo wgclient anchor-setup --name vds-1 --email you@example.com
+sudo wgclient install --anchor "Pi in Vilnius"   # an Anchor from the start
+wgclient init --anchor "Home"                    # an installed machine becomes one (or is renamed)
+wgclient init --client                           # … or a client again
 ```
-
-#### `wgclient anchor-enrol [--name <name>]`
-Only the enrolment: register this machine as an Anchor of the account you are
-signed in as and turn Anchor mode on (the service must be installed and running).
-
-#### `wgclient anchor-on` / `wgclient anchor-off`
-The switch. `anchor-on` refuses while the machine is connected to a route
-(disconnect first — a machine is either connected or an Anchor); `anchor-off`
-lets it connect to rel2 again. Both also hand the service your current sign-in,
-which renews the Anchor's own session when it had expired.
 
 #### `wgclient authorize [--token-to <file>] [--all-users]`
 On a shared computer, authorize another user to talk to the already-installed
@@ -734,12 +742,12 @@ the link drops, you move to another network, or the computer **sleeps and wakes*
 returning are detected as events (on Windows through the system's power and
 network notifications), so recovery is prompt rather than waiting on a timer; if
 no such signal arrives it still notices a dead tunnel within about two minutes.
-It first restores your normal routing so the machine stays online, then reconnects
-(retrying 5 s, 10 s, 20 s, 30 s, then every minute), re-resolving the server and
-re-pinning it to whatever network you are on now. While this is happening the app
-says **Reconnecting…** and the tray shows the same — you are *not* on the VPN
-until it says **Connected** again. Only an explicit **Disconnect** (or
-`wgclient down`) stops it.
+Then it reconnects (retrying 5 s, 10 s, 20 s, 30 s, then every minute),
+re-resolving the server and re-pinning it to whatever network you are on now. While
+the VPN is on, your traffic never goes around it: during the reconnect it **waits**
+in the tunnel — nothing leaves unprotected — and the app says **Reconnecting…** until
+it says **Connected** again. To use the internet without the VPN meanwhile, press
+**Disconnect** (**Stop reconnecting**, or `wgclient down`).
 
 ### The privileged service and the loopback control channel
 
@@ -828,19 +836,16 @@ certutil -hashfile rel2-vpn_windows_amd64_setup.exe SHA256  # Windows — compar
 ```
 
 A checksum that does not match is a file you do not run. The Windows installer and
-everything it installs are signed by Karagatan LLC (`wintun.dll` by WireGuard LLC).
-The macOS app is not yet notarized, which is why its first launch asks you to
-confirm an unknown publisher — verifying the checksum is the way to be sure of what
-you downloaded.
+everything it installs are signed by Karagatan LLC (`wintun.dll` by WireGuard LLC);
+the macOS app is signed with an Apple Developer ID and notarized by Apple.
 
 ---
 
 ## Troubleshooting
 
-- **"Cannot be opened" (macOS) / "Windows protected your PC"** — the macOS build is
-  not notarized yet, and SmartScreen can warn about a signed installer that few
-  people have run so far. Use *Open Anyway* (macOS) or *More info → Run anyway*
-  (Windows); see the install steps above.
+- **"Windows protected your PC"** — SmartScreen can warn about a signed installer
+  that few people have run so far: *More info → Run anyway*. (The macOS app is
+  notarized and opens without such a prompt.)
 - **Antivirus flags the download (e.g. Defender "Wacatac!ml")** — a known false
   positive some engines raise for new VPN software (it creates a network adapter and
   edits routing). The apps carry no malware; every release ships a `SHA256SUMS` you
@@ -855,9 +860,10 @@ you downloaded.
   start the prompt it falls back to the other, and after two such failures it
   switches to the working one for good.
 - **It says Reconnecting…** — the network dropped the tunnel and the client is
-  bringing it back; you have normal internet meanwhile but are not on the VPN.
-  **Reconnect now** forces an attempt; **Stop reconnecting** (or `wgclient down`)
-  makes it stay off.
+  bringing it back; your traffic waits for the VPN meanwhile (nothing leaves around
+  it). **Reconnect now** forces an attempt; **Stop reconnecting** (or `wgclient down`)
+  makes it stay off and gives you the internet without the VPN. A hotel or airport
+  Wi-Fi that wants you to sign in on its page first: disconnect, sign in, connect.
 - **Connected but no internet** — disconnect and reconnect; the client restores
   normal routing on disconnect. If a machine is left without internet after a
   crash, a reboot clears any leftover VPN routes.
@@ -873,20 +879,18 @@ you downloaded.
   service pauses until it is gone.
 - **Anchor: "the account session expired or was revoked"** — you changed your
   password, or the machine was off for over a month. Open the app's Anchor screen,
-  or run `wgclient anchor-on`, once: it hands the service a fresh sign-in.
+  or run `wgclient up`, once: it hands the service a fresh sign-in.
 - **Anchor: "could not renew the Anchor's session: … function not found
   user.anchor.session"** (older apps) — the rel2 server was older than the app;
   the Anchor kept working through the app's sign-in. Current apps log this
   silently and retry in the background; once the server is current the service
   gets a session of its own.
-- **Anchor: "turn on two-factor authentication first"** — Anchors need 2FA on the
-  account (Settings → Security).
 - **"a route through an Anchor somebody shared with you needs the Multi-hop plan or
   higher"** — a route through a friend's Anchor is multi-hop; upgrade in Settings →
   Subscription (the builder's upgrade page links there). A Double route to your
   own Anchor works on any plan.
 - **Slow through my Anchor** — open the Anchor screen in the app (or run
-  `wgclient anchor`): a link that says *linked · relay* is going through the TLS
+  `wgclient status` on it): a link that says *linked · relay* is going through the TLS
   fallback, which is several times slower than the direct UDP path. Something
   between the Anchor and the entry node blocks UDP (a strict firewall, a
   corporate network, a router that filters "unknown" UDP): allow outgoing UDP
@@ -894,12 +898,12 @@ you downloaded.
   node tells the Anchor its UDP port at registration). Beyond that, the Anchor's
   own *upload* speed is the ceiling for everyone using it.
 - **A route through my Anchor says "anchor offline"** — the Anchor machine is off,
-  asleep, or without internet; `wgclient anchor` on it shows the links. Nothing
+  asleep, or without internet; `wgclient status` on it shows the links. Nothing
   leaks meanwhile: traffic for that route waits instead of leaving elsewhere.
 - **Windows: "anchor mode is not available in this build"** — the service is older
   than the app; update it (the app offers **Update** when versions differ).
 - Still stuck? Email **support@rel2.com** with your OS and, for the CLI, the output
-  of `wgclient status` (and `wgclient anchor` on an Anchor).
+  of `wgclient status`.
 
 ---
 
