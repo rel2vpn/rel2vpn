@@ -295,8 +295,8 @@ administrator removes the second factor and you turn it on again. Every sign-in
 sends you an email with the IP address it came from; a **security log** of
 sign-ups, sign-ins, failed attempts, password and profile changes, device changes
 and exports is kept for 400 days and included in your data export.
-Two-factor authentication is required before a machine can become an
-[Anchor](#anchor-mode--your-own-exit).
+Two-factor authentication is optional: an
+[Anchor](#anchor-mode--your-own-exit) does not need it.
 
 ### Subscription
 
@@ -409,9 +409,8 @@ Any account can run Anchors — as many as it likes, even without a plan — and
 share each with as many people as it chooses, always by name. Using one takes a
 plan: a Double route to your own Anchor works on any plan; a Chain or Multi-hop
 route to it, and any route through an Anchor somebody shared with you, takes
-**Multi-hop** or **Max**. Two-factor
-authentication must be on for the account, and the Anchor machine must not run
-another VPN. A machine is
+**Multi-hop** or **Max**. Two-factor authentication is not needed. The Anchor
+machine must not run another VPN. A machine is
 either connected to rel2 or an Anchor — never both.
 
 ### Set one up with the app
