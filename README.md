@@ -113,8 +113,8 @@ Latest release, always at these links:
 | Platform | Download |
 |---|---|
 | macOS (Apple silicon + Intel, one universal app) | [rel2-vpn_macos_universal.zip](../../releases/latest/download/rel2-vpn_macos_universal.zip) |
-| Windows 10 / 11 — x64 | [rel2-vpn_windows_amd64.zip](../../releases/latest/download/rel2-vpn_windows_amd64.zip) |
-| Windows 11 — ARM64 | [rel2-vpn_windows_arm64.zip](../../releases/latest/download/rel2-vpn_windows_arm64.zip) |
+| Windows 10 / 11 — x64 (installer) | [rel2-vpn_windows_amd64_setup.exe](../../releases/latest/download/rel2-vpn_windows_amd64_setup.exe) |
+| Windows 11 — ARM64 (installer) | [rel2-vpn_windows_arm64_setup.exe](../../releases/latest/download/rel2-vpn_windows_arm64_setup.exe) |
 | Linux — x64 | [rel2-vpn_linux_amd64.tar.gz](../../releases/latest/download/rel2-vpn_linux_amd64.tar.gz) |
 | Linux — ARM64 | [rel2-vpn_linux_arm64.tar.gz](../../releases/latest/download/rel2-vpn_linux_arm64.tar.gz) |
 | CLI `wgclient` — Linux x64 / ARM64 / ARMv7 (32-bit Raspberry Pi OS), macOS Intel/Apple, Windows x64/ARM64, OpenWrt (mipsle) | see the [release assets](../../releases/latest) (`wgclient_<os>_<arch>.tar.gz` / `.zip`) |
@@ -146,14 +146,19 @@ window.
 
 ### Install — Windows
 
-1. Unzip and keep **rel2 VPN.exe** somewhere permanent (for example
-   `C:\Program Files\rel2 VPN\`, or your user folder) — it is portable, there is
-   no installer.
-2. Run it. SmartScreen may show *"Windows protected your PC"* for an unknown
-   publisher: click **More info → Run anyway**.
-3. Sign in, press **Connect**. A **UAC** prompt installs the tunnel service. The
-   Windows network driver (wintun) is bundled inside the app, so nothing else is
-   needed.
+1. Run **rel2-vpn_windows_amd64_setup.exe** (ARM64: `…_arm64_setup.exe`). One
+   **UAC** prompt, publisher **Karagatan LLC**: the installer puts the app, its
+   tunnel service and the Windows network driver (wintun) in
+   `C:\Program Files\rel2 VPN\` and starts the service. Should SmartScreen still
+   show *"Windows protected your PC"*: **More info → Run anyway**.
+2. Sign in, press **Connect**.
+3. Updates install from the app itself (it runs the newer installer). To remove
+   rel2 VPN: **Settings → Apps → rel2 VPN → Uninstall**. Silent install for IT:
+   `rel2-vpn_windows_amd64_setup.exe /S`.
+
+Upgrading from the portable `rel2 VPN.exe` of v1.9.21 and earlier: run the
+installer once (it closes the old app and takes over its tunnel service), then
+delete the old `rel2 VPN.exe`.
 
 ### Install — Linux
 
@@ -704,11 +709,11 @@ The interface is named per platform:
 |---|---|---|
 | macOS | `utun` (a `utunN` is assigned) | in-process WireGuard/AmneziaWG over the system `utun` driver |
 | Linux | `wgc0` | in-process WireGuard/AmneziaWG over `/dev/net/tun` |
-| Windows | `wgc0` ("WireGuard Tunnel") | in-process WireGuard/AmneziaWG over the bundled **wintun** driver |
+| Windows | `wgc0` ("WireGuard Tunnel") | in-process WireGuard/AmneziaWG over the **wintun** driver installed beside it |
 
 The WireGuard/AmneziaWG engine runs in **user space** inside the client, so no
-kernel module or extra driver needs to be installed (on Windows the signed wintun
-driver ships inside the app).
+kernel module or extra driver needs to be installed (on Windows the installer puts
+WireGuard LLC's signed `wintun.dll` beside the service).
 
 ### The always-connect transport ladder
 
@@ -820,28 +825,30 @@ against it before running it:
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing              # Linux
 shasum -a 256 -c SHA256SUMS 2>/dev/null               # macOS
-certutil -hashfile rel2-vpn_windows_amd64.zip SHA256  # Windows — compare with SHA256SUMS
+certutil -hashfile rel2-vpn_windows_amd64_setup.exe SHA256  # Windows — compare with SHA256SUMS
 ```
 
-A checksum that does not match is a file you do not run. The apps are not yet
-code-signed for Apple notarization or Windows Authenticode, which is why the first
-launch asks you to confirm an unknown publisher — verifying the checksum is the way
-to be sure of what you downloaded.
+A checksum that does not match is a file you do not run. The Windows installer and
+everything it installs are signed by Karagatan LLC (`wintun.dll` by WireGuard LLC).
+The macOS app is not yet notarized, which is why its first launch asks you to
+confirm an unknown publisher — verifying the checksum is the way to be sure of what
+you downloaded.
 
 ---
 
 ## Troubleshooting
 
-- **"Cannot be opened" (macOS) / "Windows protected your PC"** — the build is not
-  code-signed yet. Use *Open Anyway* (macOS) or *More info → Run anyway* (Windows);
-  see the install steps above.
-- **Antivirus flags the download (e.g. Defender "Wacatac!ml")** — this is a known
-  false positive that some antivirus engines raise for new, unsigned VPN software
-  (it creates a network adapter and edits routing). The apps carry no malware; every
-  release ships a `SHA256SUMS` you can verify. If your antivirus blocks the download,
-  allow the file in its protection history, or add the folder as an exclusion, then
-  verify the checksum before running. Code signing to remove the warning is in
-  progress.
+- **"Cannot be opened" (macOS) / "Windows protected your PC"** — the macOS build is
+  not notarized yet, and SmartScreen can warn about a signed installer that few
+  people have run so far. Use *Open Anyway* (macOS) or *More info → Run anyway*
+  (Windows); see the install steps above.
+- **Antivirus flags the download (e.g. Defender "Wacatac!ml")** — a known false
+  positive some engines raise for new VPN software (it creates a network adapter and
+  edits routing). The apps carry no malware; every release ships a `SHA256SUMS` you
+  can verify, and the Windows files are signed by Karagatan LLC. Since v1.9.22
+  Windows gets an installer: the app no longer unpacks its service out of itself,
+  which is what Defender took for a threat. If your antivirus still blocks a file,
+  restore it from its protection history and verify the checksum.
 - **The app says the tunnel service is not installed** — click **Install** (or
   **Update** if you just upgraded). On Windows, make sure you allow the UAC prompt.
 - **Windows: no administrator prompt appears when you click Install** — click it
